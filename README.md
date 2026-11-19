@@ -1,4 +1,4 @@
-# Pharmacy Management System
+# Pharmacy Management System (PMS)
 
 ## Introduction
 
@@ -28,6 +28,45 @@ This system addresses several real-world challenges associated with managing pha
 4. **Replacing Manual Record-Keeping:** Unlike manual record-keeping methods that rely on sheets of paper, registers, and other physical documents, a computerized system makes information easier to retrieve, organize, and analyze. Paper-based records can be misplaced or lost, and performing quick analyses using them can be difficult. By storing information digitally and providing automated reporting, the Pharmacy Management System makes pharmacy operations more efficient, organized, and reliable.
 
 ## Design
+The **PMS** is designed using a multi-tab structure that separates sections in the application based on the kinds of operations you can do in those tabs.
+
+| Tab | Description |
+|---|---|
+| **Home** | A report tab with summary figures, stock information, sales performance, and an export report button. |
+| **Medicines** | Medicine registration, stock updates, removal, medicine table and stock valuation. |
+| **Suppliers** | Supplier registration, removal, and supplier table. |
+| **Sales** | Medicine sales form, discounts, receipts, and sales table. |
+| **History** | Transaction records, sorting and filtering. |
+
+The **project file structure** is as follows:
+```text
+pharmacy/
+│
+├── main.c                  // Entry point; starts the application
+│
+├── include/                // Contains header files (function prototypes and structures)
+│   ├── medicine.h
+│   ├── supplier.h
+│   ├── sales.h
+│   ├── history.h
+│   └── gui.h
+│
+├── src/                    // Contains the core implementation of the program
+│   ├── medicine.c          // Adding, removing, viewing, updating medicines, calculating stock value
+│   ├── supplier.c          // Adding, removing, and viewing suppliers
+│   ├── sales.c             // Processing sales, calculating discounts and generating receipts
+│   ├── history.c           // Recording, displaying, sorting and filtering transactions
+│   ├── storage.c           // Saving and loading data from files
+│   └── gui.c               // Creating IUP windows, layouts, buttons, tables and callbacks
+│
+└── data/                   // Stores files that persist after the program closes
+    ├── medicines.dat
+    ├── suppliers.dat
+    ├── supplies.dat
+    ├── sales.dat
+    └── history.dat
+```
+This design ensures **separation of concerns** and **code modularity**, which in turn enhances **code readability** and **testing** compared to having all the app logic in one file.
 
 ## Implementation
 

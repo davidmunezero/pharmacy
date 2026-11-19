@@ -1,5 +1,14 @@
 # Pharmacy Management System (PMS)
 
+## Project Information
+- **Institution:** Adventist University of Central Africa
+- **Faculty:** Faculty of Information Technology
+- **Course:** INSY 8212 — Programming with C (Group J)
+- **Instructor:** Tr. Justin Murenzi
+- **Student:** Munezero David
+- **Student ID:** 20251SEN104
+- **Deadline:** November 22, 2026
+
 ## Introduction
 
 This is a **Pharmacy Management System** implemented in C using IUP (Portable User Interface) for graphical user interface development. IUP is a native C library used for building graphical user interfaces.
@@ -55,7 +64,7 @@ pharmacy/
 │   ├── medicine.c          // Adding, removing, viewing, updating medicines, calculating stock value
 │   ├── supplier.c          // Adding, removing, and viewing suppliers
 │   ├── sales.c             // Processing sales, calculating discounts and generating receipts
-│   ├── history.c           // Recording, displaying, sorting and filtering transactions
+│   ├── history.c           // Recording, displaying, sorting, and filtering transactions
 │   ├── storage.c           // Saving and loading data from files
 │   └── gui.c               // Creating IUP windows, layouts, buttons, tables and callbacks
 │
@@ -70,6 +79,24 @@ This design ensures **separation of concerns** and **code modularity**, which in
 
 ## Implementation
 
+## Data Models
+Explain how you are representing data (e.g., medicine)
+
+### Page Navigation
+
+### Managing Medicines
+
+### Managing Suppliers
+
+### Reporting
+
+### Handling Sales
+
+### Storing Transaction History
+
+### File Persistence
+
 ## Testing 
+At least 15 test cases
 
 ## Conclusion

@@ -227,6 +227,82 @@ within 30 days. "Export Report" writes the report to
 `data/pharmacy_report.txt`, and "Reload Data" re-reads all `.dat`
 files from disk without restarting.
 
+#### The expiry chart
+
+The chart answers one question for the pharmacist: **"How much stock
+is about to expire, and when?"** Each bar represents one calendar
+month (labelled e.g. `Nov 25` … `Oct 26`), and its height is the
+**total quantity of units whose expiry date falls inside that month**.
+A tall bar means a large batch is about to expire — a signal to run
+promotions, transfer stock, or place smaller future orders. Already
+expired medicines are excluded because they are dead stock, not
+upcoming losses.
+
+The chart is built in `refresh_plot()` (`src/gui.c`). Medicines are
+first bucketed by how many months ahead they expire:
+
+```c
+for (i = 0; i < medicine_count; i++) {
+    Medicine *m = &medicines[i];
+    int months_ahead;
+    if (med_is_expired(m)) continue;          /* skip dead stock */
+    months_ahead = (m->expiry.y - today.y) * 12 + (m->expiry.m - today.m);
+    if (months_ahead >= 0 && months_ahead < 12)
+        buckets[months_ahead] += m->qty;      /* sum units per month */
+}
+```
+
+Only medicines expiring within the next 12 months contribute; older
+stock is already flagged grey in the Medicines table. The buckets are
+then drawn as a bar series with month-name X labels:
+
+```c
+IupPlotBegin(ui.plot, 1);   /* string X labels */
+for (k = 0; k < 12; k++) {
+    int total = today.y * 12 + (today.m - 1) + k;
+    int y = total / 12;
+    int m = total % 12 + 1;
+    snprintf(label, sizeof label, "%s %02d", mon_names[m - 1], y % 100);
+    IupPlotAddStr(ui.plot, label, (double)buckets[k]);
+}
+IupPlotEnd(ui.plot);
+
+IupSetAttribute(ui.plot, "DS_MODE", "BAR");
+IupSetAttribute(ui.plot, "DS_NAME", "Units expiring");
+IupSetAttribute(ui.plot, "DS_COLOR", "255 90 0");   /* orange-red */
+```
+
+`IupPlotBegin/End` wraps the dataset, `IupPlotAddStr` supplies a
+string label plus value per point, and `DS_MODE="BAR"` selects the
+bar style. `refresh_plot()` is called on startup, on every
+`TABCHANGE_CB` to Home, and after every stock-changing action (add,
+update, sell, remove, discount, reload), so the chart always reflects
+current data.
+
+The text report is produced by `generate_report()` into an 8192-byte
+buffer using successive `snprintf(buf + off, n - off, ...)` calls —
+the offset pattern prevents buffer overruns. The best-seller is found
+by summing `sales[k].qty` per `med_id` and keeping the maximum:
+
+```c
+for (i = 0; i < medicine_count; i++) {
+    int k, qty_sold = 0;
+    for (k = 0; k < sale_count; k++)
+        if (sales[k].med_id == medicines[i].id)
+            qty_sold += sales[k].qty;
+    if (qty_sold > best_qty) {
+        best_qty = qty_sold;
+        snprintf(best_id, sizeof best_id, "%d", medicines[i].id);
+        snprintf(best_name, sizeof best_name, "%s", medicines[i].name);
+    }
+}
+```
+
+Both expired-loss and near-expiry figures reuse the same date
+utilities as the rest of the app: `days_to_expiry()` returns days
+until expiry (negative = expired) and `medicine_stock_value(1)` sums
+`qty * price` over expired items only.
+
 ### Handling Sales
 
 The Sales tab has a **Sell** form (medicine ID, quantity, customer

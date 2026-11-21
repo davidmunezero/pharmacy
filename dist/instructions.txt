@@ -1,0 +1,19 @@
+Pharmacy Management System
+==========================
+
+HOW TO RUN
+----------
+1. Keep pharmacy.exe and the data/ folder together in the same folder.
+2. Double-click pharmacy.exe. No installation or compiler needed.
+3. The app reads/writes its data files in the data/ folder (do not move the exe elsewhere).
+
+REQUIREMENTS
+------------
+- Windows 10 or later (64-bit)
+- That's it — all libraries are statically linked into the exe.
+
+CONTENTS
+--------
+pharmacy.exe   The application (standalone, ~4 MB)
+data/          Data files (medicines, suppliers, sales, history)
+               These are created automatically if missing.

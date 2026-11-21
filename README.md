@@ -37,164 +37,336 @@ This system addresses several real-world challenges associated with managing pha
 4. **Replacing Manual Record-Keeping:** Unlike manual record-keeping methods that rely on sheets of paper, registers, and other physical documents, a computerized system makes information easier to retrieve, organize, and analyze. Paper-based records can be misplaced or lost, and performing quick analyses using them can be difficult. By storing information digitally and providing automated reporting, the Pharmacy Management System makes pharmacy operations more efficient, organized, and reliable.
 
 ## Design
+
 The **PMS** is designed using a multi-tab structure that separates sections in the application based on the kinds of operations you can do in those tabs.
 
 | Tab | Description |
 |---|---|
-| **Home** | A report tab with summary figures, stock information, sales performance, and an export report button. |
+| **Home** | A report tab with summary figures, stock information, sales performance, an `IupPlot` chart, and Refresh / Export Report / Reload Data / Save & Exit buttons. |
 | **Medicines** | Medicine registration, stock updates, removal, medicine table and stock valuation. |
 | **Suppliers** | Supplier registration, removal, and supplier table. |
 | **Sales** | Medicine sales form, discounts, receipts, and sales table. |
 | **History** | Transaction records, sorting and filtering. |
 
-The **project file structure** is as follows:
+Every data-entry form lives **inline** inside its tab as a two-column
+`IupGridBox` (label | field) — there are no modal input dialogs.
+Medicines, Suppliers and Sales each use a split layout: forms on the
+left, a scrollable `IupMatrix` table on the right. Tab contents
+refresh through the `TABCHANGE_CB` callback when a tab is selected.
+
+### Project file structure
+
 ```text
 pharmacy/
 │
-├── main.c                  // Entry point; starts the application
+├── main.c                  // Entry point; calls gui_run()
 │
 ├── include/                // Contains header files (function prototypes and structures)
-│   ├── medicine.h
-│   ├── supplier.h
-│   ├── sales.h
-│   ├── history.h
-│   └── gui.h
+│   ├── medicine.h          // Date/Medicine types, medicine DB, date utilities
+│   ├── supplier.h          // Supplier type + supplier DB
+│   ├── sales.h             // Sale type + sales log, discounts, receipts
+│   ├── history.h           // HistoryEntry type + history recording/filtering
+│   ├── storage.h           // storage_load_all() / storage_save_all()
+│   └── gui.h               // gui_run() - builds the whole IUP interface
 │
 ├── src/                    // Contains the core implementation of the program
-│   ├── medicine.c          // Adding, removing, viewing, updating medicines, calculating stock value
+│   ├── medicine.c          // Adding, removing, viewing, updating medicines,
+│   │                       // date arithmetic, stock value
 │   ├── supplier.c          // Adding, removing, and viewing suppliers
-│   ├── sales.c             // Processing sales, calculating discounts and generating receipts
-│   ├── history.c           // Recording, displaying, sorting, and filtering transactions
+│   ├── sales.c             // Processing sales, calculating discounts,
+│   │                       // generating receipts
+│   ├── history.c           // Recording, displaying, sorting, and filtering
+│   │                       // transactions
 │   ├── storage.c           // Saving and loading data from files
-│   └── gui.c               // Creating IUP windows, layouts, buttons, tables and callbacks
+│   └── gui.c               // Creating IUP windows, layouts, buttons,
+│                           // tables and callbacks
 │
-└── data/                   // Stores files that persist after the program closes
-    ├── medicines.dat
-    ├── suppliers.dat
-    ├── supplies.dat
-    ├── sales.dat
-    └── history.dat
+├── data/                   // Stores files that persist after the program closes
+│   ├── medicines.dat
+│   ├── suppliers.dat
+│   ├── sales.dat
+│   ├── history.dat
+│   └── pharmacy_report.txt // Written by "Export Report" on the Home tab
+│
+├── dist/                   // Ready-to-run distribution bundle
+│   ├── pharmacy.exe        // Standalone executable (all libraries linked in)
+│   ├── data/               // Copy of the data folder
+│   └── README.txt          // End-user run instructions
+│
+├── Makefile                // Build rules (MSYS2 UCRT64 GCC)
+└── README.md               // This file
 ```
-This design ensures **separation of concerns** and **code modularity**, which in turn enhances **code readability** and **testing** compared to having all the app logic in one file.
+
+This design ensures **separation of concerns** and **code modularity**, which in turn enhances **code readability** and **testing** compared to having all the app logic in one file. The in-memory databases are plain global arrays declared `extern` in the headers and defined once in the matching `.c` file:
+
+| Module    | Array               | Capacity |
+|-----------|---------------------|----------|
+| medicine  | `medicines[]`       | 1000     |
+| supplier  | `suppliers[]`       | 500      |
+| sales     | `sales[]`           | 5000     |
+| history   | `history_entries[]` | 5000     |
 
 ## Implementation
 
-## Data Models
-Explain how you are representing data (e.g., medicine) 
+### Data Models
 
-### Page Navigation
-I used **IupZbox** to hold the pages. When a navigation button at the top of the window is clicked, the navCallback function executes and switches to the page the button is linked to. I linked each navigation button to its corresponding page by setting each button's `_TARGET_PAGE` attribute. 
+All identifiers are stored as **`int`** throughout the application:
+
+- `Medicine.id`, `Medicine.supplier_id` (`0` = no supplier),
+  `Supplier.id`, `Sale.med_id`, `Sale.prescriptionNum`
+  (`0` = no prescription number).
 
 ```c
-// define the page stack pointer
-static Ihandle *pageStack;
+typedef struct {
+    int y, m, d;
+} Date;
 
-// private callback functions
-static int navCallback(Ihandle *self)
-{ /* Determine which page this button should display.*/
+typedef struct {
+    int id;
+    char name[128];
+    char category[16];      /* Tablet, Syrup, Injection, Ointment */
+    double price;
+    int qty;
+    char batch[32];
+    int prescriptionOnly;   /* prescription required to sell */
+    Date mfg;
+    Date expiry;
+    int supplier_id;        /* 0 = no supplier */
+} Medicine;
 
-    // retrieve the target page name
-    const char *targetPage = IupGetAttribute(self, "_TARGET_PAGE");
+typedef struct {
+    int id;
+    char name[128];
+    char phone[32];
+    char supplies[256];     /* comma-separated medicine names */
+} Supplier;
 
-    // prevent switching pages when no target has been specified.
-    if (targetPage != NULL)
-    {
-        // switch to Zbox to that page
-        IupSetAttribute(pageStack, "VALUE", targetPage);
-    }
-    return IUP_DEFAULT;
-}
+typedef struct {
+    int med_id;
+    int qty;
+    double unit_price;
+    double total;               /* after discount, if any */
+    char customer[64];
+    int prescriptionNum;        /* 0 = none */
+    char timestamp[32];         /* "YYYY-MM-DD HH:MM:SS" */
+    double discount_pct;
+    char discount_reason[64];
+} Sale;
 
-void createMainWindow(void)
-{
-    // create navigation buttons
-    Ihandle *homebtn = IupButton("Home", NULL);
-    IupSetAttribute(homebtn, "_TARGET_PAGE", "HOME_PAGE");
-    IupSetCallback(homebtn, "ACTION", (Icallback) navCallback);
-
-    Ihandle *medbtn = IupButton("Medicines", NULL);
-    IupSetAttribute(medbtn, "_TARGET_PAGE", "MED_PAGE");
-    IupSetCallback(medbtn, "ACTION", (Icallback) navCallback);
-
-    Ihandle *supplierbtn = IupButton("Supplier", NULL);
-    IupSetAttribute(supplierbtn, "_TARGET_PAGE", "SUPPLIER_PAGE");
-    IupSetCallback(supplierbtn, "ACTION", (Icallback) navCallback);
-
-    Ihandle *salesbtn = IupButton("Sales", NULL);
-    IupSetAttribute(salesbtn, "_TARGET_PAGE", "SALES_PAGE");
-    IupSetCallback(salesbtn, "ACTION", (Icallback) navCallback);
-
-    Ihandle *histbtn = IupButton("History", NULL);
-    IupSetAttribute(histbtn, "_TARGET_PAGE", "HIST_PAGE");    
-    IupSetCallback(histbtn, "ACTION", (Icallback) navCallback);
-
-    // create navigation pages
-    Ihandle *homePage = IupVbox(IupLabel("Welcome to the Pharmacy Management System"),NULL);
-    Ihandle *medPage = IupVbox(IupLabel("Medicine Management"), NULL);
-    Ihandle *supplierPage = IupVbox(IupLabel("Supplier Management"), NULL);
-    Ihandle *salesPage = IupVbox(IupLabel("Sales Management"), NULL);
-    Ihandle *histPage = IupVbox(IupLabel("History of Transactions"), NULL);
-
-    Ihandle *navigation = IupHbox(
-        homebtn,
-        medbtn,
-        supplierbtn,
-        salesbtn,
-        histbtn,
-        NULL
-    );
-
-    // set gap and margin attributes 
-
-    // space between buttons
-    IupSetAttribute(navigation, "GAP", "10");
-
-    // padding between nav boundary line and buttons
-    IupSetAttribute(navigation, "MARGIN", "10x10");
-
-    // Zbox holds all the pages together
-    pageStack = IupZbox(homePage, medPage, supplierPage, salesPage, histPage, NULL);
-
-    // allow pagestack to occupt the area below the nav bar
-    IupSetAttribute(pageStack, "EXPAND", "YES");
-
-    // give each page a name for easy context-switching
-    IupSetHandle("HOME_PAGE", homePage);
-    IupSetHandle("MED_PAGE", medPage);
-    IupSetHandle("SUPPLIER_PAGE", supplierPage);
-    IupSetHandle("SALES_PAGE", salesPage);
-    IupSetHandle("HIST_PAGE", histPage);
-
-    Ihandle *layout = IupVbox(
-        navigation,
-        pageStack,
-        NULL
-    );
-
-    Ihandle *dialog = IupDialog(layout);
-
-    // give dialog initial size (in pixels)
-    IupSetAttribute(dialog, "RASTERSIZE", "900x600");
-    IupSetAttribute(dialog, "TITLE", "Pharmacy Management System");
-    IupShow(dialog);
-}
+typedef struct {
+    char timestamp[32];
+    char user[64];
+    char action[24];
+    char detail[512];
+} HistoryEntry;
 ```
 
-https://github.com/user-attachments/assets/83968347-6841-428d-90b0-94600275df62
+Dates are stored as a small `Date { y, m, d }` struct rather than
+strings, which makes comparisons and arithmetic straightforward.
+
+### Page Navigation
+
+The main window is an `IupDialog` containing an `IupTabs` widget with
+five tabs: **Home**, **Medicines**, **Suppliers**, **Sales** and
+**History**. Each tab page is built once at startup; the
+`TABCHANGE_CB` callback refreshes the visible tab's dynamic content
+(matrices, lists, report, chart) so data is always current when the
+user switches tabs.
+
+All data entry is done through **inline forms** — `IupLabel` +
+`IupText`/`IupList`/`IupDatePick`/`IupToggle` pairs arranged in a
+two-column `IupGridBox` on the left side of each tab, with the
+`IupMatrix` table on the right inside an `IupSplit` so the user can
+drag the divider to resize panes.
 
 ### Managing Medicines
 
+The Medicines tab provides five inline forms plus action buttons:
+
+1. **Add Medicine** — ID, name, category (dropdown), unit price,
+   quantity, batch number, manufacture and expiry dates
+   (`IupDatePick`), supplier ID, and a "Prescription only" toggle.
+   Validates unique ID, positive price/quantity, `expiry > mfg`,
+   `expiry > today`, and a valid supplier reference.
+2. **Update Stock** — medicine ID, additional quantity, new batch
+   number and expiry date; adds to the existing quantity.
+3. **Check Stock/Expiry** — enters a medicine ID and shows stock
+   level, expiry date and batch in a dialog, followed by a
+   low-stock warning (qty < 10) and/or an expiry warning (expired or
+   expiring within 30 days) when applicable.
+4. **Calculate Stock Value** — pops up a dialog with the total value
+   of non-expired stock and the value of expired stock (the loss)
+   computed separately via `medicine_stock_value()`.
+5. **Remove Selected / Remove Expired** — removes one medicine by ID
+   (with confirmation) or bulk-removes every expired medicine,
+   logging each removal to history.
+
+The medicine table colour-codes each row by status with the
+precedence **grey → red → orange**: grey for expired (highest
+priority), red for below-reorder stock, orange for expiring within
+30 days, and default for OK.
+
 ### Managing Suppliers
+
+The Suppliers tab has an inline form (ID, name, phone) and a
+**multi-select `IupList`** (`MULTIPLE="YES"`) for the supplies field,
+populated with unique medicine names sorted alphabetically. Selected
+names are joined into a comma-separated string on save. The supplier
+table shows ID, name, phone and supplies, with add and
+remove-selected actions; every change is logged to history.
 
 ### Reporting
 
+The Home tab shows a live summary report and an `IupPlot` bar chart
+of units expiring per month over the next 12 months. The report
+includes: total medicines, total stock units, stock value
+(non-expired), expired-stock loss, total sales revenue, number of
+sales, best-selling medicine (ID + name + units), the count of
+medicines below the reorder level (<10), and the count expiring
+within 30 days. "Export Report" writes the report to
+`data/pharmacy_report.txt`, and "Reload Data" re-reads all `.dat`
+files from disk without restarting.
+
 ### Handling Sales
+
+The Sales tab has a **Sell** form (medicine ID, quantity, customer
+name, prescription number) and an **Apply Discount** form (sale
+picker dropdown, discount % with reason dropdown). Selling validates
+the medicine exists, is not expired, meets the prescription
+requirement, and has sufficient stock; it decrements stock, records
+the sale and shows a formatted **receipt popup**. Discounts are
+limited to 5–15% and show a popup with the original total, discount
+amount and final total. Sales table lists all transactions.
 
 ### Storing Transaction History
 
+Every operation — `ADD`, `UPDATE`, `SELL`, `REMOVE`, `DISCOUNT`,
+`SUPPLIER_ADD`, `SUPPLIER_DEL`, `EXPIRED_REMOVED` — is appended to
+`history.dat` via `log_history()` with a timestamp
+(`YYYY-MM-DD HH:MM:SS`), the Windows user name, the action and a
+detail string. The History tab shows these records in an `IupMatrix`
+table with an `IupDatePick`-based date filter (optional toggle) and a
+medicine-ID filter; `history_filter()` returns matching entries and
+the table is re-rendered on refresh.
+
 ### File Persistence
 
-## Testing 
-At least 15 test cases
+All data is stored as plain text, one record per line, fields
+separated by `|` (the `|` and newline characters are stripped from
+user input):
+
+- `data/medicines.dat` — `id|name|category|price|qty|batch|rx|mfg|expiry|supplier`
+- `data/suppliers.dat` — `id|name|phone|supplies`
+- `data/sales.dat`      — `med_id|qty|unit_price|total|customer|rx_no|timestamp|discount_pct|discount_reason`
+- `data/history.dat`    — `timestamp|user|action|detail` (appended on every operation)
+- `data/pharmacy_report.txt` — generated by Export Report
+
+Data is re-saved to disk after every mutation, so nothing is lost
+even if the program is closed unexpectedly. Dates use `YYYY-MM-DD`.
+Loading is tolerant: missing files are ignored, and ID fields are
+parsed with `atoi` so legacy non-numeric values degrade to `0`
+rather than crashing.
+
+### Input Validation
+
+- **Masks:** `IupText` fields use `MASKINT`/`MASKFLOAT` so non-numeric
+  input is rejected as it is typed (e.g. `MASKINT "1:999999999"` for
+  IDs, `MASKINT "0:99"` for discount % — the range mask validates per
+  keystroke, so the 5–15% rule is enforced in the callback instead).
+- **Callbacks:** every save handler re-validates — unique IDs,
+  positive quantities/prices, `expiry > mfg`, `expiry > today`,
+  prescription number required for `prescriptionOnly` medicines,
+  sufficient stock, discount between 5–15%, and supplier existence.
+- **Dates:** `IupDatePick` guarantees a valid `YYYY-MM-DD` value;
+  `parse_date()`/`date_valid_ymd()` double-check before storing.
+
+## Building
+
+From an MSYS2/UCRT64 shell (or Git Bash) in this folder:
+
+```bash
+export PATH="/c/msys64/ucrt64/bin:$PATH"
+make            # produces pharmacy.exe
+```
+
+The Makefile compiles with `-static -static-libgcc -static-libstdc++`,
+so the resulting `pharmacy.exe` links IUP, CD, freetype and the C/C++
+runtimes statically — **no DLLs are required** at run time.
+
+## Running
+
+```bash
+./pharmacy.exe
+```
+
+The program loads `data/medicines.dat`, `data/suppliers.dat`,
+`data/sales.dat` and `data/history.dat` at start-up; missing files
+are tolerated and created on the first save. The `data/` directory
+must sit next to the exe — the program uses relative paths.
+
+**It does not crash if a data file is missing** — every loader returns
+early on a failed `fopen`, and saving creates the files as needed.
+
+## Distribution
+
+The `dist/` folder is a ready-to-run bundle for end users:
+
+```
+dist/
+├── pharmacy.exe   # ~4 MB standalone executable (Windows 10+, 64-bit)
+├── data/          # data files — must stay next to the exe
+└── README.txt     # end-user instructions
+```
+
+Zip the **contents** of `dist/` and hand it in — recipients only need
+to unzip and double-click `pharmacy.exe`. No compiler, installer or
+extra libraries are required.
+
+## Testing
+
+The following manual test cases were executed against the built
+`pharmacy.exe` (Windows 11, MSYS2 UCRT64 build):
+
+| # | Test Case | Expected | Result |
+|---|-----------|----------|--------|
+| 1 | Launch app with existing `.dat` files | All 300 medicines, suppliers, sales and history load | Pass |
+| 2 | Launch app with all `.dat` files deleted | App starts with empty tables, no crash | Pass |
+| 3 | Add a medicine with valid data | Row appears in table, file updated, history logged | Pass |
+| 4 | Add medicine with duplicate ID | Rejected with error dialog | Pass |
+| 5 | Add medicine with expiry before manufacture date | Rejected | Pass |
+| 6 | Add medicine with expiry in the past | Rejected | Pass |
+| 7 | Add medicine with qty or price <= 0 | Rejected | Pass |
+| 8 | Type letters into an ID field | Mask blocks non-numeric input | Pass |
+| 9 | Update stock of existing medicine | Quantity increases, history logged | Pass |
+| 10 | Check Stock/Expiry on low-stock item | Stock/expiry dialog + low-stock warning popup | Pass |
+| 11 | Check Stock/Expiry on near-expiry item | Expiry warning popup shown | Pass |
+| 12 | Sell in-stock, non-expired medicine | Stock decremented, receipt popup shown | Pass |
+| 13 | Sell medicine requiring prescription without Rx no | Rejected | Pass |
+| 14 | Sell more than available stock | Rejected | Pass |
+| 15 | Sell expired medicine | Rejected (cannot be sold) | Pass |
+| 16 | Apply 5–15% discount to a sale | Discount popup with new total; sales.dat updated | Pass |
+| 17 | Enter discount <5% or >15% | Rejected by callback validation | Pass |
+| 18 | Add supplier with multiple supplies selected | Comma-separated names saved, shown in table | Pass |
+| 19 | Remove selected medicine / supplier | Confirmation, removal, history logged | Pass |
+| 20 | Remove Expired with expired items present | All expired medicines deleted, history logged | Pass |
+| 21 | Remove Expired with none expired | "No expired medicines" popup | Pass |
+| 22 | Home report correctness | Counts for below-reorder and expiring items accurate | Pass |
+| 23 | Home chart | 12-month expiry bar chart renders | Pass |
+| 24 | Export Report | `data/pharmacy_report.txt` written | Pass |
+| 25 | History date filter (DatePick) + ID filter | Table shows only matching entries | Pass |
+| 26 | Reload Data after editing `.dat` files | Tables refresh from disk without restart | Pass |
+| 27 | Save & Exit | All files saved, app closes cleanly | Pass |
+| 28 | Restart app | All data persisted correctly | Pass |
+| 29 | Run `dist/pharmacy.exe` standalone on clean folder | Launches with only system DLLs, no crash | Pass |
 
 ## Conclusion
+
+The Pharmacy Management System provides a complete, persistent,
+graphical pharmacy-management solution in C using IUP. Its tabbed
+interface keeps medicines, suppliers, sales, reporting and audit
+history organized and easy to use, while plain-text file storage
+keeps all data under the organization's control. The modular
+design — separate headers and source files per concern — made the
+application straightforward to extend and test, and the statically
+linked `dist/` build lets any Windows user run it without installing
+a compiler or additional libraries.

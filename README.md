@@ -80,9 +80,107 @@ This design ensures **separation of concerns** and **code modularity**, which in
 ## Implementation
 
 ## Data Models
-Explain how you are representing data (e.g., medicine)
+Explain how you are representing data (e.g., medicine) 
 
 ### Page Navigation
+I used **IupZbox** to hold the pages. When a navigation button at the top of the window is clicked, the navCallback function executes and switches to the page the button is linked to. I linked each navigation button to its corresponding page by setting each button's `_TARGET_PAGE` attribute. 
+
+```c
+// define the page stack pointer
+static Ihandle *pageStack;
+
+// private callback functions
+static int navCallback(Ihandle *self)
+{ /* Determine which page this button should display.*/
+
+    // retrieve the target page name
+    const char *targetPage = IupGetAttribute(self, "_TARGET_PAGE");
+
+    // prevent switching pages when no target has been specified.
+    if (targetPage != NULL)
+    {
+        // switch to Zbox to that page
+        IupSetAttribute(pageStack, "VALUE", targetPage);
+    }
+    return IUP_DEFAULT;
+}
+
+void createMainWindow(void)
+{
+    // create navigation buttons
+    Ihandle *homebtn = IupButton("Home", NULL);
+    IupSetAttribute(homebtn, "_TARGET_PAGE", "HOME_PAGE");
+    IupSetCallback(homebtn, "ACTION", (Icallback) navCallback);
+
+    Ihandle *medbtn = IupButton("Medicines", NULL);
+    IupSetAttribute(medbtn, "_TARGET_PAGE", "MED_PAGE");
+    IupSetCallback(medbtn, "ACTION", (Icallback) navCallback);
+
+    Ihandle *supplierbtn = IupButton("Supplier", NULL);
+    IupSetAttribute(supplierbtn, "_TARGET_PAGE", "SUPPLIER_PAGE");
+    IupSetCallback(supplierbtn, "ACTION", (Icallback) navCallback);
+
+    Ihandle *salesbtn = IupButton("Sales", NULL);
+    IupSetAttribute(salesbtn, "_TARGET_PAGE", "SALES_PAGE");
+    IupSetCallback(salesbtn, "ACTION", (Icallback) navCallback);
+
+    Ihandle *histbtn = IupButton("History", NULL);
+    IupSetAttribute(histbtn, "_TARGET_PAGE", "HIST_PAGE");    
+    IupSetCallback(histbtn, "ACTION", (Icallback) navCallback);
+
+    // create navigation pages
+    Ihandle *homePage = IupVbox(IupLabel("Welcome to the Pharmacy Management System"),NULL);
+    Ihandle *medPage = IupVbox(IupLabel("Medicine Management"), NULL);
+    Ihandle *supplierPage = IupVbox(IupLabel("Supplier Management"), NULL);
+    Ihandle *salesPage = IupVbox(IupLabel("Sales Management"), NULL);
+    Ihandle *histPage = IupVbox(IupLabel("History of Transactions"), NULL);
+
+    Ihandle *navigation = IupHbox(
+        homebtn,
+        medbtn,
+        supplierbtn,
+        salesbtn,
+        histbtn,
+        NULL
+    );
+
+    // set gap and margin attributes 
+
+    // space between buttons
+    IupSetAttribute(navigation, "GAP", "10");
+
+    // padding between nav boundary line and buttons
+    IupSetAttribute(navigation, "MARGIN", "10x10");
+
+    // Zbox holds all the pages together
+    pageStack = IupZbox(homePage, medPage, supplierPage, salesPage, histPage, NULL);
+
+    // allow pagestack to occupt the area below the nav bar
+    IupSetAttribute(pageStack, "EXPAND", "YES");
+
+    // give each page a name for easy context-switching
+    IupSetHandle("HOME_PAGE", homePage);
+    IupSetHandle("MED_PAGE", medPage);
+    IupSetHandle("SUPPLIER_PAGE", supplierPage);
+    IupSetHandle("SALES_PAGE", salesPage);
+    IupSetHandle("HIST_PAGE", histPage);
+
+    Ihandle *layout = IupVbox(
+        navigation,
+        pageStack,
+        NULL
+    );
+
+    Ihandle *dialog = IupDialog(layout);
+
+    // give dialog initial size (in pixels)
+    IupSetAttribute(dialog, "RASTERSIZE", "900x600");
+    IupSetAttribute(dialog, "TITLE", "Pharmacy Management System");
+    IupShow(dialog);
+}
+```
+
+https://github.com/user-attachments/assets/83968347-6841-428d-90b0-94600275df62
 
 ### Managing Medicines
 

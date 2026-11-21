@@ -1,0 +1,16 @@
+=========== PHARMACY REPORT ===========
+Generated : 2026-11-22
+User      : HP
+--------------------------------------
+Total medicines          : 300
+Total quantity in stock  : 13646
+Stock value              : 64480.61
+Expired stock (loss)     : 43665.11
+--------------------------------------
+Total sales amount       : 571.77
+Number of sales today    : 2
+--------------------------------------
+Best-selling medicine    : 2 Amoxicilin (35 units)
+Below re-order (<10)     : 78
+Expiring within 30 days  : 4
+======================================
